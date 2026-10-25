@@ -9,11 +9,8 @@ let currentMessUser = null;
 document.addEventListener('DOMContentLoaded', async () => {
   // 1. Verify Authentication
   currentMessUser = await getCurrentUser();
-  if (!currentMessUser || currentMessUser.role !== 'mess') {
-    showToast('Please log in with your Mess credentials', 'info');
-    setTimeout(() => {
-      window.location.href = '/auth?role=mess&tab=login';
-    }, 400);
+    if (!currentMessUser || currentMessUser.role !== 'mess') {
+    window.location.replace('/auth?role=mess&tab=login');
     return;
   }
 

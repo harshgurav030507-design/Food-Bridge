@@ -12,11 +12,8 @@ let filterTimeout = null;
 document.addEventListener('DOMContentLoaded', async () => {
   // 1. Verify Authentication
   currentNgoUser = await getCurrentUser();
-  if (!currentNgoUser || currentNgoUser.role !== 'ngo') {
-    showToast('Please log in with your NGO credentials', 'info');
-    setTimeout(() => {
-      window.location.href = '/auth?role=ngo&tab=login';
-    }, 400);
+    if (!currentNgoUser || currentNgoUser.role !== 'ngo') {
+    window.location.replace('/auth?role=ngo&tab=login');
     return;
   }
 
