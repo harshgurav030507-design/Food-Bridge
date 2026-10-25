@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login & Registration | FoodBridge — Surplus Food Rescue Platform</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22%20%22100%22><text y=%22.9em%22 font-size=%2290%22>🍲</text></svg>">
+</head>
+<body class="min-h-screen bg-slate-50 flex flex-col text-slate-800">
+
+  <!-- Header -->
+  <header class="glass-header">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2.5">
+        <div class="w-9 h-9 bg-emerald-600 text-white rounded-lg flex items-center justify-center text-xl shadow">
+          🍲
+        </div>
+        <div>
+          <span class="text-xl font-extrabold tracking-tight text-slate-900">Food<span class="text-emerald-600">Bridge</span></span>
+          <span class="hidden sm:inline-block text-xs text-slate-500 font-medium ml-2">Surplus Food Rescue Platform</span>
+        </div>
+      </a>
+      <a href="/" class="text-sm font-semibold text-slate-600 hover:text-emerald-600 flex items-center gap-1 transition">
+        &larr; Back to Home
+      </a>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-xl w-full mx-auto p-4 sm:p-6 my-6">
+
+    <!-- Main Auth Card -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      <!-- Tabs: Login vs Register -->
+      <div class="grid grid-cols-2 border-b border-slate-200 text-center font-bold text-sm">
+        <button id="tab-btn-login" onclick="switchAuthTab('login')" class="py-4 border-b-2 border-emerald-600 text-emerald-600 bg-emerald-50/40 transition">
+          Log In
+        </button>
+        <button id="tab-btn-register" onclick="switchAuthTab('register')" class="py-4 border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition">
+          Register New Account
+        </button>
+      </div>
+
+      <div class="p-6 sm:p-8">
+
+        <!-- ======================= -->
+        <!-- LOGIN FORM -->
+        <!-- ======================= -->
+        <form id="login-form" onsubmit="handleLoginSubmit(event)" class="space-y-4">
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Select Your Portal Role</label>
+            <div class="grid grid-cols-2 gap-3">
+              <label class="cursor-pointer">
+                <input type="radio" name="login_role" value="mess" checked class="peer sr-only">
+                <div class="p-3 text-center border-2 rounded-xl peer-checked:border-amber-500 peer-checked:bg-amber-50 peer-checked:text-amber-900 border-slate-200 hover:border-slate-300 font-semibold text-xs sm:text-sm transition">
+                  <div class="text-xl mb-1">👨‍🍳</div>
+                  Mess / Canteen
+                </div>
+              </label>
+              <label class="cursor-pointer">
+                <input type="radio" name="login_role" value="ngo" class="peer sr-only">
+                <div class="p-3 text-center border-2 rounded-xl peer-checked:border-emerald-500 peer-checked:bg-emerald-50 peer-checked:text-emerald-900 border-slate-200 hover:border-slate-300 font-semibold text-xs sm:text-sm transition">
+                  <div class="text-xl mb-1">🤝</div>
+                  NGO / Orphanage
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Email Address</label>
+            <input type="email" id="login-email" required placeholder="Enter your registered email" 
+                   class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-sm transition">
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Password</label>
+            <input type="password" id="login-password" required placeholder="Enter your password" 
+                   class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-sm transition">
+          </div>
+
+          <button type="submit" id="login-submit-btn" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition text-sm flex items-center justify-center gap-2">
+            <span>Log In to Portal</span> &rarr;
+          </button>
+        </form>
+
+        <!-- ======================= -->
+        <!-- REGISTER FORM -->
+        <!-- ======================= -->
+        <form id="register-form" onsubmit="handleRegisterSubmit(event)" class="space-y-4 hidden">
+          <!-- Role Selector -->
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">I am Registering As:</label>
+            <div class="grid grid-cols-2 gap-3">
+              <label class="cursor-pointer">
+                <input type="radio" name="reg_role" value="mess" checked onchange="updateRoleLabels('mess')" class="peer sr-only">
+                <div class="p-3 text-center border-2 rounded-xl peer-checked:border-amber-500 peer-checked:bg-amber-50 peer-checked:text-amber-900 border-slate-200 hover:border-slate-300 font-semibold text-xs sm:text-sm transition">
+                  <div class="text-xl mb-1">👨‍🍳</div>
+                  Mess / Canteen
+                </div>
+              </label>
+              <label class="cursor-pointer">
+                <input type="radio" name="reg_role" value="ngo" onchange="updateRoleLabels('ngo')" class="peer sr-only">
+                <div class="p-3 text-center border-2 rounded-xl peer-checked:border-emerald-500 peer-checked:bg-emerald-50 peer-checked:text-emerald-900 border-slate-200 hover:border-slate-300 font-semibold text-xs sm:text-sm transition">
+                  <div class="text-xl mb-1">🤝</div>
+                  NGO / Orphanage
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Name & Org Type -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label id="lbl-org-name" class="block text-xs font-bold text-slate-700 mb-1">Mess / Canteen Name *</label>
+              <input type="text" id="reg-name" required placeholder="e.g. Block A Hostel Mess" 
+                     class="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none text-sm">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Organization Type</label>
+              <select id="reg-org-type" class="theme-select w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none text-sm bg-white">
+                <option value="College Mess">College Mess</option>
+                <option value="Hostel Canteen">Hostel Canteen</option>
+                <option value="Local Mess / Tiffin">Local Mess / Tiffin</option>
+                <option value="Catering Service">Catering Service</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Contact Person & Phone -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Contact Person Name</label>
+              <input type="text" id="reg-contact" placeholder="e.g. Supervisor Name" 
+                     class="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none text-sm">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Phone Number (10 Digits) *</label>
+              <div class="relative">
+                <span class="absolute left-3 top-2 text-xs font-bold text-slate-400">+91</span>
+                <input type="tel" id="reg-phone" required maxlength="10" placeholder="10-digit mobile number" 
+                       class="w-full pl-10 pr-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-semibold text-slate-800">
+              </div>
+              <span id="phone-validation-hint" class="text-[11px] text-slate-500 mt-0.5 block">Only 10 digits allowed</span>
+            </div>
+          </div>
+
+          <!-- Email & Password -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Login Email *</label>
+              <input type="email" id="reg-email" required placeholder="name@domain.com" 
+                     class="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none text-sm">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Password *</label>
+              <input type="password" id="reg-password" required minlength="6" placeholder="At least 6 characters" 
+                     class="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none text-sm">
+            </div>
+          </div>
+
+          <!-- Detailed Physical Address -->
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Detailed Physical Address (For Food Pickup) *</label>
+            <input type="text" id="reg-address" required placeholder="Building, Street, Gate Number, Campus Landmark" 
+                   class="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none text-sm">
+          </div>
+
+          <!-- City, State, and Pincode (Autofilled on Fetch Location) -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                <span>City *</span>
+                <span id="autofill-city-badge" class="hidden text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1 rounded">Autofilled</span>
+              </label>
+              <input type="text" id="reg-city" required placeholder="City name" 
+                     class="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none text-sm">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                <span>State *</span>
+                <span id="autofill-state-badge" class="hidden text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1 rounded">Autofilled</span>
+              </label>
+              <input type="text" id="reg-state" required placeholder="State name" 
+                     class="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none text-sm">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Pincode</label>
+              <input type="text" id="reg-pincode" maxlength="6" placeholder="Pincode" 
+                     class="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none text-sm">
+            </div>
+          </div>
+
+          <!-- Geolocation & Map Pin Selection (Autofills City & State) -->
+          <div class="p-4 bg-slate-50 rounded-xl border border-slate-200">
+            <div class="flex items-center justify-between mb-2">
+              <label class="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                📍 Location Coordinates (For Distance Matching)
+              </label>
+              <button type="button" id="btn-fetch-location" onclick="autoDetectCoordinates()" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm transition flex items-center gap-1.5">
+                <span>🛰️</span> Fetch GPS Location
+              </button>
+            </div>
+            <p class="text-xs text-slate-500 mb-3">
+              Click <strong>Fetch GPS Location</strong> or click anywhere on the map to set your location &mdash; <strong>City and State will be autofilled automatically</strong>.
+            </p>
+
+            <div id="picker-map" style="height: 180px;"></div>
+
+            <div class="grid grid-cols-2 gap-2 mt-3 text-xs">
+              <div>
+                <label class="text-slate-500 font-semibold">Latitude:</label>
+                <input type="number" step="any" id="reg-lat" required value="28.5450" 
+                       class="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs">
+              </div>
+              <div>
+                <label class="text-slate-500 font-semibold">Longitude:</label>
+                <input type="number" step="any" id="reg-lon" required value="77.1926" 
+                       class="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs">
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" id="reg-submit-btn" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition text-sm flex items-center justify-center gap-2">
+            <span>Send OTP to my email</span> &rarr;
+          </button>
+        </form>
+
+        <!-- OTP VERIFICATION PANEL (shown after the form is submitted) -->
+        <div id="otp-panel" class="hidden space-y-4">
+          <div class="text-center">
+            <div class="text-4xl mb-2">&#9993;</div>
+            <h3 class="text-lg font-bold text-slate-800">Verify your email</h3>
+            <p class="text-sm text-slate-600 mt-1">We sent a 6-digit code to<br>
+              <span id="otp-email-label" class="font-bold text-slate-800"></span></p>
+          </div>
+
+          <input type="text" id="otp-input" inputmode="numeric" maxlength="6" autocomplete="one-time-code"
+                 placeholder="------"
+                 class="w-full px-3 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none text-center text-2xl tracking-[0.5em] font-bold">
+
+          <button type="button" id="otp-verify-btn" onclick="handleVerifyOtp()"
+                  class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition text-sm flex items-center justify-center gap-2">
+            <span>Verify &amp; Create Account</span> &rarr;
+          </button>
+
+          <div class="flex items-center justify-between text-xs">
+            <button type="button" onclick="backToRegisterForm()" class="text-slate-500 hover:text-slate-800 underline">&larr; Change email / details</button>
+            <button type="button" id="otp-resend-btn" onclick="handleResendOtp()" class="text-emerald-600 font-bold hover:underline disabled:text-slate-400 disabled:no-underline" disabled>Resend OTP</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <script src="/js/common.js"></script>
+  <script>
+    let pickerMap = null;
+    let pickerMarker = null;
+
+    // Enforce strictly 10 digits for phone number
+    const phoneInput = document.getElementById('reg-phone');
+    if (phoneInput) {
+      phoneInput.addEventListener('input', function (e) {
+        // Strip out non-digit characters and limit to 10 characters
+        this.value = this.value.replace(/\D/g, '').slice(0, 10);
+        const hint = document.getElementById('phone-validation-hint');
+        if (this.value.length === 10) {
+          hint.textContent = '✓ 10-digit number complete';
+          hint.className = 'text-[11px] text-emerald-600 font-bold mt-0.5 block';
+        } else {
+          hint.textContent = `${this.value.length}/10 digits entered`;
+          hint.className = 'text-[11px] text-slate-500 mt-0.5 block';
+        }
+      });
+    }
+
+    // Switch between Login and Register tabs
+    function switchAuthTab(tab) {
+      const loginForm = document.getElementById('login-form');
+      const regForm = document.getElementById('register-form');
+      const loginBtn = document.getElementById('tab-btn-login');
+      const regBtn = document.getElementById('tab-btn-register');
+
+      const otpPanel = document.getElementById('otp-panel');
+
+      if (tab === 'login') {
+        loginForm.classList.remove('hidden');
+        regForm.classList.add('hidden');
+        otpPanel.classList.add('hidden');
+        loginBtn.className = 'py-4 border-b-2 border-emerald-600 text-emerald-600 bg-emerald-50/40 transition';
+        regBtn.className = 'py-4 border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition';
+      } else {
+        loginForm.classList.add('hidden');
+        if (otpPendingEmail) {
+          otpPanel.classList.remove('hidden');
+        } else {
+          regForm.classList.remove('hidden');
+        }
+        regBtn.className = 'py-4 border-b-2 border-emerald-600 text-emerald-600 bg-emerald-50/40 transition';
+        loginBtn.className = 'py-4 border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition';
+
+        // Initialize leaflet map picker if not already created
+        setTimeout(() => {
+          initPickerMap();
+        }, 150);
+      }
+    }
+
+    // Role-dependent labels in register form
+    function updateRoleLabels(role) {
+      const nameLbl = document.getElementById('lbl-org-name');
+      const orgTypeSelect = document.getElementById('reg-org-type');
+
+      if (role === 'ngo') {
+        nameLbl.textContent = 'NGO / Orphanage Name *';
+        orgTypeSelect.innerHTML = `
+          <option value="Orphanage & Child Home">Orphanage & Child Home</option>
+          <option value="Registered NGO">Registered NGO</option>
+          <option value="Homeless Shelter">Homeless Shelter</option>
+          <option value="Community Kitchen">Community Kitchen</option>
+        `;
+      } else {
+        nameLbl.textContent = 'Mess / Canteen Name *';
+        orgTypeSelect.innerHTML = `
+          <option value="College Mess">College Mess</option>
+          <option value="Hostel Canteen">Hostel Canteen</option>
+          <option value="Local Mess / Tiffin">Local Mess / Tiffin</option>
+          <option value="Catering Service">Catering Service</option>
+        `;
+      }
+    }
+
+    // Initialize Map Pin Picker
+    function initPickerMap() {
+      if (pickerMap) {
+        pickerMap.invalidateSize();
+        return;
+      }
+
+      const defaultLat = parseFloat(document.getElementById('reg-lat').value) || 28.5450;
+      const defaultLon = parseFloat(document.getElementById('reg-lon').value) || 77.1926;
+
+      pickerMap = L.map('picker-map').setView([defaultLat, defaultLon], 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap'
+      }).addTo(pickerMap);
+
+      pickerMarker = L.marker([defaultLat, defaultLon], { draggable: true }).addTo(pickerMap);
+
+      pickerMarker.on('dragend', async function (e) {
+        const coord = e.target.getLatLng();
+        updateCoordInputs(coord.lat, coord.lng);
+        await autofillLocationDetails(coord.lat, coord.lng);
+      });
+
+      pickerMap.on('click', async function (e) {
+        pickerMarker.setLatLng(e.latlng);
+        updateCoordInputs(e.latlng.lat, e.latlng.lng);
+        await autofillLocationDetails(e.latlng.lat, e.latlng.lng);
+      });
+    }
+
+    function updateCoordInputs(lat, lon) {
+      document.getElementById('reg-lat').value = lat.toFixed(5);
+      document.getElementById('reg-lon').value = lon.toFixed(5);
+    }
+
+    // Autofill City and State using reverse geocoding
+    async function autofillLocationDetails(lat, lon) {
+      const geo = await reverseGeocode(lat, lon);
+      if (geo) {
+        if (geo.city) {
+          const cityEl = document.getElementById('reg-city');
+          cityEl.value = geo.city;
+          document.getElementById('autofill-city-badge').classList.remove('hidden');
+        }
+        if (geo.state) {
+          const stateEl = document.getElementById('reg-state');
+          stateEl.value = geo.state;
+          document.getElementById('autofill-state-badge').classList.remove('hidden');
+        }
+        if (geo.pincode && !document.getElementById('reg-pincode').value) {
+          document.getElementById('reg-pincode').value = geo.pincode;
+        }
+        showToast(`Autofilled location: ${geo.city || ''}${geo.state ? ', ' + geo.state : ''}`, 'success');
+      }
+    }
+
+    // Browser GPS auto-detection with autofill of City and State
+    async function autoDetectCoordinates() {
+      const btn = document.getElementById('btn-fetch-location');
+      const originalText = btn.innerHTML;
+      btn.innerHTML = '<span>⏳</span> Fetching...';
+      btn.disabled = true;
+
+      try {
+        showToast('Fetching GPS coordinates and location...', 'info');
+        const coords = await detectUserLocation();
+        updateCoordInputs(coords.latitude, coords.longitude);
+
+        if (pickerMap && pickerMarker) {
+          pickerMap.setView([coords.latitude, coords.longitude], 15);
+          pickerMarker.setLatLng([coords.latitude, coords.longitude]);
+        }
+
+        // Autofill city and state
+        await autofillLocationDetails(coords.latitude, coords.longitude);
+      } catch (err) {
+        showToast('Could not get GPS location: ' + err.message + '. You can click on the map to pick location.', 'error');
+      } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+      }
+    }
+
+    // Handle Login Submit
+    async function handleLoginSubmit(e) {
+      e.preventDefault();
+      const email = document.getElementById('login-email').value;
+      const password = document.getElementById('login-password').value;
+      const role = document.querySelector('input[name="login_role"]:checked').value;
+      const btn = document.getElementById('login-submit-btn');
+
+      btn.disabled = true;
+      btn.innerHTML = 'Signing in...';
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, role })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          showToast(data.error || 'Login failed', 'error');
+          btn.disabled = false;
+          btn.innerHTML = 'Log In to Portal &rarr;';
+          return;
+        }
+
+        showToast('Login successful! Redirecting...', 'success');
+        setTimeout(() => {
+          if (data.user.role === 'ngo') {
+            window.location.href = '/ngo';
+          } else {
+            window.location.href = '/mess';
+          }
+        }, 500);
+      } catch (err) {
+        showToast('Network error: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.innerHTML = 'Log In to Portal &rarr;';
+      }
+    }
+
+    // ---------- Registration with email OTP ----------
+    let otpPendingEmail = null;   // email waiting for OTP verification
+    let otpPendingRole = null;
+    let resendTimer = null;
+
+    function resetRegisterButton() {
+      const btn = document.getElementById('reg-submit-btn');
+      btn.disabled = false;
+      btn.innerHTML = '<span>Send OTP to my email</span> &rarr;';
+    }
+
+    function startResendCountdown(seconds) {
+      const btn = document.getElementById('otp-resend-btn');
+      clearInterval(resendTimer);
+      let left = seconds;
+      btn.disabled = true;
+      btn.textContent = `Resend OTP in ${left}s`;
+      resendTimer = setInterval(() => {
+        left--;
+        if (left <= 0) {
+          clearInterval(resendTimer);
+          btn.disabled = false;
+          btn.textContent = 'Resend OTP';
+        } else {
+          btn.textContent = `Resend OTP in ${left}s`;
+        }
+      }, 1000);
+    }
+
+    function readRegisterFormData() {
+      return {
+        role: document.querySelector('input[name="reg_role"]:checked').value,
+        name: document.getElementById('reg-name').value,
+        org_type: document.getElementById('reg-org-type').value,
+        contact_person: document.getElementById('reg-contact').value,
+        phone: document.getElementById('reg-phone').value.replace(/\D/g, ''),
+        email: document.getElementById('reg-email').value,
+        password: document.getElementById('reg-password').value,
+        address: document.getElementById('reg-address').value,
+        city: document.getElementById('reg-city').value,
+        state: document.getElementById('reg-state').value,
+        pincode: document.getElementById('reg-pincode').value,
+        latitude: document.getElementById('reg-lat').value,
+        longitude: document.getElementById('reg-lon').value
+      };
+    }
+
+    // Step 1: send OTP
+    async function requestOtp() {
+      const formData = readRegisterFormData();
+
+      if (formData.phone.length !== 10) {
+        showToast('Please enter a valid 10-digit mobile number.', 'error');
+        document.getElementById('reg-phone').focus();
+        return false;
+      }
+      if (!formData.city || !formData.state) {
+        showToast('Please provide both City and State.', 'error');
+        return false;
+      }
+
+      const btn = document.getElementById('reg-submit-btn');
+      btn.disabled = true;
+      btn.innerHTML = 'Sending OTP...';
+
+      try {
+        const res = await fetch('/api/auth/register/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.error || 'Could not send OTP', 'error');
+          resetRegisterButton();
+          return false;
+        }
+
+        otpPendingEmail = data.email;
+        otpPendingRole = formData.role;
+        document.getElementById('otp-email-label').textContent = data.email;
+        document.getElementById('register-form').classList.add('hidden');
+        document.getElementById('otp-panel').classList.remove('hidden');
+        document.getElementById('otp-input').value = '';
+        document.getElementById('otp-input').focus();
+        startResendCountdown(30);
+        showToast('OTP sent! Check your email inbox (and spam folder).', 'success');
+        resetRegisterButton();
+        return true;
+      } catch (err) {
+        showToast('Network error: ' + err.message, 'error');
+        resetRegisterButton();
+        return false;
+      }
+    }
+
+    function handleRegisterSubmit(e) {
+      e.preventDefault();
+      requestOtp();
+    }
+
+    async function handleResendOtp() {
+      const btn = document.getElementById('otp-resend-btn');
+      btn.disabled = true;
+      const ok = await requestOtp();
+      if (!ok) {
+        // requestOtp() already showed the error; the server tells how long to wait
+        startResendCountdown(30);
+      }
+    }
+
+    function backToRegisterForm() {
+      clearInterval(resendTimer);
+      otpPendingEmail = null;
+      document.getElementById('otp-panel').classList.add('hidden');
+      document.getElementById('register-form').classList.remove('hidden');
+    }
+
+    // Step 2: verify OTP -> account is created -> redirect
+    async function handleVerifyOtp() {
+      const otp = document.getElementById('otp-input').value.trim();
+      if (!/^\d{6}$/.test(otp)) {
+        showToast('Please enter the 6-digit OTP.', 'error');
+        return;
+      }
+
+      const btn = document.getElementById('otp-verify-btn');
+      btn.disabled = true;
+      btn.innerHTML = 'Verifying...';
+
+      try {
+        const res = await fetch('/api/auth/register/verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: otpPendingEmail, otp })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          showToast(data.error || 'Verification failed', 'error');
+          btn.disabled = false;
+          btn.innerHTML = '<span>Verify &amp; Create Account</span> &rarr;';
+          return;
+        }
+
+        showToast('Email verified! Account created. Redirecting...', 'success');
+        const role = otpPendingRole;
+        otpPendingEmail = null;
+        setTimeout(() => {
+          window.location.href = role === 'ngo' ? '/ngo' : '/mess';
+        }, 600);
+      } catch (err) {
+        showToast('Verification error: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.innerHTML = '<span>Verify &amp; Create Account</span> &rarr;';
+      }
+    }
+
+    // On Load: handle URL query params like ?tab=register&role=mess
+    document.addEventListener('DOMContentLoaded', () => {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab');
+      const role = params.get('role');
+
+      if (tab === 'register') {
+        switchAuthTab('register');
+      }
+
+      if (role === 'ngo') {
+        const radioRegNgo = document.querySelector('input[name="reg_role"][value="ngo"]');
+        if (radioRegNgo) {
+          radioRegNgo.checked = true;
+          updateRoleLabels('ngo');
+        }
+        const radioLoginNgo = document.querySelector('input[name="login_role"][value="ngo"]');
+        if (radioLoginNgo) radioLoginNgo.checked = true;
+      }
+    });
+  </script>
+</body>
+</html>

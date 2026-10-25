@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NGO Portal | FoodBridge — Surplus Food Rescue Platform</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Leaflet Map CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22%20%22100%22><text y=%22.9em%22 font-size=%2290%22>🤝</text></svg>">
+</head>
+<body class="min-h-screen bg-slate-50 flex flex-col text-slate-800">
+
+  <!-- Header -->
+  <header class="glass-header sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <a href="/" class="w-11 h-11 bg-emerald-600 text-white rounded-xl flex items-center justify-center text-2xl shadow-md shadow-emerald-600/20">
+          🤝
+        </a>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-xl font-extrabold tracking-tight text-slate-900">NGO Portal</span>
+            <span class="px-2 py-0.5 rounded text-xs font-bold bg-emerald-100 text-emerald-800 uppercase tracking-wide">Beneficiary</span>
+          </div>
+          <span id="ngo-org-name" class="text-xs text-slate-500 font-medium block">Loading NGO profile...</span>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button onclick="switchViewMode('my-claims')" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5">
+          <span>📦</span> My Pickups & Claims
+          <span id="my-claims-badge" class="hidden px-2 py-0.5 bg-emerald-600 text-white rounded-full text-[10px]">0</span>
+        </button>
+        <button onclick="handleLogout()" class="px-3 py-2 text-sm font-medium text-slate-500 hover:text-red-600 transition">
+          Log Out
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Location & Proximity Recommendation Hero -->
+  <div class="bg-gradient-to-r from-emerald-800 to-teal-900 text-white py-6 px-4 shadow-inner">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="px-2.5 py-0.5 rounded-full bg-emerald-500/30 text-emerald-200 border border-emerald-400/30 text-xs font-bold uppercase tracking-wider">
+            📍 Proximity-Based Recommendation Active
+          </span>
+        </div>
+        <h1 class="text-xl sm:text-2xl font-extrabold mt-1.5">
+          Surplus Food Near You (Closest Messes First)
+        </h1>
+        <p id="ngo-location-text" class="text-emerald-100 text-xs sm:text-sm mt-1 flex items-center gap-1.5">
+          <span>📍</span> <span>Loading your registered location...</span>
+        </p>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button onclick="updateMyLocation()" class="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl text-xs font-bold transition flex items-center gap-1.5">
+          <span>🛰️</span> Update My GPS Pin
+        </button>
+        <button onclick="toggleMapView()" id="btn-toggle-map" class="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-emerald-950 rounded-xl text-xs font-extrabold transition shadow-sm flex items-center gap-1.5">
+          <span>🗺️</span> <span id="map-toggle-text">Show Map View</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Portal Body -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+    <!-- View Toggle: Browse Feed vs My Claims -->
+    <div class="flex items-center justify-between border-b border-slate-200 pb-4 mb-6">
+      <div class="flex items-center gap-2 text-sm font-bold">
+        <button onclick="switchViewMode('feed')" id="view-feed-btn" class="px-4 py-2 rounded-xl bg-emerald-600 text-white shadow-sm transition">
+          🍲 Browse Nearby Surplus Food
+        </button>
+        <button onclick="switchViewMode('my-claims')" id="view-claims-btn" class="px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition">
+          🚚 My Pickups & History
+        </button>
+      </div>
+
+      <div class="text-xs text-slate-500 hidden sm:block">
+        Free nutritious food for orphanages & NGOs
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- SECTION 1: SURPLUS FOOD BROWSE FEED -->
+    <!-- ========================================== -->
+    <div id="section-feed">
+      <!-- Search and Filter Bar -->
+      <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm mb-6 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+        <!-- Search input -->
+        <div class="flex-1 relative">
+          <input type="text" id="filter-search" oninput="debounceFilter()" placeholder="Search dishes, college mess, or address..." 
+                 class="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none text-xs sm:text-sm">
+          <span class="absolute left-3 top-2.5 text-slate-400 text-sm">🔍</span>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3 text-xs">
+          <!-- Food Category -->
+          <div class="flex items-center gap-1.5">
+            <span class="text-slate-500 font-bold">Diet:</span>
+            <select id="filter-food-type" onchange="fetchAvailableFood()" class="theme-select text-xs py-2 pl-3 pr-8">
+              <option value="all">All Foods</option>
+              <option value="veg">🥬 Vegetarian</option>
+              <option value="non-veg">🍗 Non-Veg</option>
+            </select>
+          </div>
+
+          <!-- Sort Order -->
+          <div class="flex items-center gap-1.5">
+            <span class="text-slate-500 font-bold">Sort By:</span>
+            <select id="filter-sort" onchange="fetchAvailableFood()" class="theme-select text-xs py-2 pl-3 pr-8 border-emerald-400 bg-emerald-50 text-emerald-900 font-bold">
+              <option value="distance">📍 Closest to Me (Recommended)</option>
+              <option value="freshness">⏰ Expiring Soonest</option>
+              <option value="plates">🍲 Most Plates (Quantity)</option>
+              <option value="recent">🆕 Recently Added</option>
+            </select>
+          </div>
+
+          <!-- Max Distance Filter -->
+          <div class="flex items-center gap-1.5">
+            <span class="text-slate-500 font-bold">Radius:</span>
+            <select id="filter-max-dist" onchange="fetchAvailableFood()" class="theme-select text-xs py-2 pl-3 pr-8">
+              <option value="">Any Distance</option>
+              <option value="2">Within 2 km</option>
+              <option value="5">Within 5 km</option>
+              <option value="10">Within 10 km</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Map View Container (Collapsible) -->
+      <div id="map-wrapper" class="hidden mb-6 bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
+        <div class="flex items-center justify-between px-2 pb-2 text-xs">
+          <span class="font-bold text-slate-700 flex items-center gap-1">
+            <span>🗺️</span> Interactive Mess Map (Click markers to view food details & claim)
+          </span>
+          <span class="text-slate-500 text-[11px]">Pins show active food messes near your registered coordinates</span>
+        </div>
+        <div id="interactive-map" style="height: 380px;" class="rounded-xl"></div>
+      </div>
+
+      <!-- Food Listing Cards Grid -->
+      <div id="food-cards-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="col-span-full text-center py-16 text-slate-400">Loading nearby surplus food listings...</div>
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- SECTION 2: MY PICKUPS & CLAIMS -->
+    <!-- ========================================== -->
+    <div id="section-claims" class="hidden">
+      <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+        <h2 class="text-lg font-bold text-slate-900 mb-1">My Active Pickups & Claim History</h2>
+        <p class="text-xs text-slate-500 mb-6">Coordinate with messes, view phone numbers and Google Maps directions to collect food on time.</p>
+
+        <div id="claims-container" class="space-y-4">
+          <div class="text-center py-12 text-slate-400">Loading your pickups...</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ========================================== -->
+  <!-- CLAIM FOOD MODAL -->
+  <!-- ========================================== -->
+  <div id="claim-modal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-6 sm:p-7 shadow-2xl">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+        <div class="flex items-center gap-2">
+          <span class="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center text-lg font-bold">🤝</span>
+          <div>
+            <h2 class="text-lg font-bold text-slate-900">Claim Surplus Food</h2>
+            <p class="text-xs text-slate-500">Pick up this meal for your orphanage / NGO free of cost.</p>
+          </div>
+        </div>
+        <button onclick="closeClaimModal()" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center font-bold text-lg">&times;</button>
+      </div>
+
+      <div id="claim-food-summary" class="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1 mb-4">
+        <!-- Injected via JS -->
+      </div>
+
+      <form onsubmit="handleClaimSubmit(event)" class="space-y-4">
+        <input type="hidden" id="claim-listing-id">
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Estimated Pickup Time *</label>
+          <input type="text" id="claim-eta" required placeholder="e.g. Arriving in 30 minutes" 
+                 class="w-full px-3 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none text-xs">
+          <!-- Quick presets -->
+          <div class="flex items-center gap-1.5 mt-2">
+            <span class="text-[10px] text-slate-500 font-bold">Quick:</span>
+            <button type="button" onclick="setEta('Within 30 mins')" class="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded text-[10px] font-semibold">30 mins</button>
+            <button type="button" onclick="setEta('Within 45 mins')" class="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded text-[10px] font-semibold">45 mins</button>
+            <button type="button" onclick="setEta('Within 1 hour')" class="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded text-[10px] font-semibold">1 hour</button>
+            <button type="button" onclick="setEta('Within 2 hours')" class="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded text-[10px] font-semibold">2 hours</button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Volunteer & Vehicle Notes</label>
+          <input type="text" id="claim-notes" placeholder="e.g. Volunteer Ravi coming on two-wheeler with bags / van" 
+                 class="w-full px-3 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 outline-none text-xs">
+        </div>
+
+        <div class="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-xs leading-relaxed">
+          <strong>⚠️ Responsible Pickup Commitment:</strong>
+          Please collect this food before the freshness expiration deadline. Once claimed, other NGOs will see it as reserved.
+        </div>
+
+        <div class="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+          <button type="button" onclick="closeClaimModal()" class="px-4 py-2 rounded-xl border border-slate-300 text-slate-600 font-semibold text-xs hover:bg-slate-100 transition">
+            Cancel
+          </button>
+          <button type="submit" id="btn-confirm-claim" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition text-xs flex items-center gap-1.5">
+            <span>✅ Confirm Claim & Get Contact</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/common.js"></script>
+  <script src="/js/ngo.js"></script>
+</body>
+</html>

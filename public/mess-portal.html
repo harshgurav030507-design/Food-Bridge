@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mess Portal | FoodBridge — Surplus Food Rescue Platform</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22%20%22100%22><text y=%22.9em%22 font-size=%2290%22>👨‍🍳</text></svg>">
+</head>
+<body class="min-h-screen bg-slate-50 flex flex-col text-slate-800">
+
+  <!-- Header -->
+  <header class="glass-header sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <a href="/" class="w-11 h-11 bg-amber-600 text-white rounded-xl flex items-center justify-center text-2xl shadow-md">
+          👨‍🍳
+        </a>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-xl font-extrabold tracking-tight text-slate-900">Mess Portal</span>
+            <span class="px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-800 uppercase tracking-wide">Food Provider</span>
+          </div>
+          <span id="mess-org-name" class="text-xs text-slate-500 font-medium block">Loading mess profile...</span>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button onclick="openUploadModal()" class="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-bold rounded-xl shadow-md shadow-amber-600/20 transition flex items-center gap-2">
+          <span class="text-lg leading-none">+</span> Upload Today's Extra Food
+        </button>
+        <button onclick="handleLogout()" class="px-3 py-2 text-sm font-medium text-slate-500 hover:text-red-600 transition">
+          Log Out
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+    <!-- Mess Info & Address Banner -->
+    <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm mb-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div>
+        <h1 id="mess-banner-title" class="text-2xl font-extrabold text-slate-900">Welcome, Mess Manager</h1>
+        <p id="mess-banner-address" class="text-sm text-slate-600 mt-1 flex items-center gap-1.5">
+          <span>📍</span> <span>Loading registered address...</span>
+        </p>
+      </div>
+      <div class="flex items-center gap-2 text-xs">
+        <div class="px-3 py-2 bg-slate-100 rounded-lg text-slate-700">
+          <span class="font-bold text-slate-900">Phone:</span> <span id="mess-banner-phone">-</span>
+        </div>
+        <div class="px-3 py-2 bg-slate-100 rounded-lg text-slate-700">
+          <span class="font-bold text-slate-900">Contact:</span> <span id="mess-banner-contact">-</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Stats Cards -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+        <div class="text-xs font-bold uppercase tracking-wider text-slate-400">Total Plates Saved</div>
+        <div id="stat-plates-saved" class="text-3xl font-extrabold text-emerald-600 mt-2">0</div>
+        <div class="text-xs text-slate-500 mt-1">Given to orphanages & NGOs</div>
+      </div>
+
+      <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+        <div class="text-xs font-bold uppercase tracking-wider text-slate-400">Active Extra Food</div>
+        <div id="stat-active-count" class="text-3xl font-extrabold text-amber-600 mt-2">0</div>
+        <div class="text-xs text-slate-500 mt-1">Listings available right now</div>
+      </div>
+
+      <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+        <div class="text-xs font-bold uppercase tracking-wider text-slate-400">Claimed (Awaiting Pickup)</div>
+        <div id="stat-claimed-count" class="text-3xl font-extrabold text-blue-600 mt-2">0</div>
+        <div class="text-xs text-slate-500 mt-1">NGOs on their way to collect</div>
+      </div>
+
+      <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+        <div class="text-xs font-bold uppercase tracking-wider text-slate-400">Total Handed Over</div>
+        <div id="stat-completed-count" class="text-3xl font-extrabold text-slate-800 mt-2">0</div>
+        <div class="text-xs text-slate-500 mt-1">Completed donation batches</div>
+      </div>
+    </div>
+
+    <!-- Listings Management Section -->
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <!-- Tabs Header -->
+      <div class="flex border-b border-slate-200 bg-slate-50/70 overflow-x-auto text-sm font-bold">
+        <button onclick="setTab('claimed')" id="tab-claimed" class="px-6 py-4 border-b-2 border-transparent text-slate-600 hover:text-slate-900 flex items-center gap-2 whitespace-nowrap">
+          <span>🚨</span> Claimed by NGOs (Need Handover)
+          <span id="badge-claimed-count" class="hidden px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-xs font-bold">0</span>
+        </button>
+
+        <button onclick="setTab('available')" id="tab-available" class="px-6 py-4 border-b-2 border-amber-600 text-amber-700 bg-white flex items-center gap-2 whitespace-nowrap">
+          <span>🍲</span> Active Surplus Listings
+          <span id="badge-available-count" class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">0</span>
+        </button>
+
+        <button onclick="setTab('picked_up')" id="tab-picked_up" class="px-6 py-4 border-b-2 border-transparent text-slate-600 hover:text-slate-900 flex items-center gap-2 whitespace-nowrap">
+          <span>✅</span> Completed Donation History
+        </button>
+
+        <button onclick="setTab('expired')" id="tab-expired" class="px-6 py-4 border-b-2 border-transparent text-slate-600 hover:text-slate-900 flex items-center gap-2 whitespace-nowrap">
+          <span>⏰</span> Expired Listings
+        </button>
+      </div>
+
+      <!-- Tab Content Area -->
+      <div class="p-6">
+        <div id="listings-container" class="space-y-4">
+          <div class="text-center py-12 text-slate-400">Loading your food listings...</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ========================================== -->
+  <!-- UPLOAD SURPLUS FOOD MODAL -->
+  <!-- ========================================== -->
+  <div id="upload-modal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-200 mb-6">
+        <div>
+          <h2 class="text-xl font-bold text-slate-900">Upload Today's Extra Food</h2>
+          <p class="text-xs text-slate-500 mt-0.5">Post details so nearby NGOs and orphanages can pick it up before it expires.</p>
+        </div>
+        <button onclick="closeUploadModal()" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center font-bold text-lg">&times;</button>
+      </div>
+
+      <form onsubmit="handleFoodUploadSubmit(event)" class="space-y-4">
+        <!-- Title & Category -->
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Food Item(s) & Dish Name *</label>
+          <input type="text" id="food-title" required placeholder="e.g. Lunch: Dal Tadka, Jeera Rice, Mixed Veg & 45 Chapatis" 
+                 class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500 outline-none text-sm">
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Number of Plates / Servings *</label>
+            <input type="number" id="food-plates" required min="1" placeholder="e.g. 40" 
+                   class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500 outline-none text-sm">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Food Category</label>
+            <select id="food-type" class="theme-select select-amber w-full px-3.5 py-2.5 rounded-xl border border-amber-300 focus:ring-2 focus:ring-amber-500 outline-none text-sm bg-white">
+              <option value="veg">🥬 Vegetarian (Pure Veg)</option>
+              <option value="non-veg">🍗 Non-Vegetarian</option>
+              <option value="jain">🌱 Jain / No Onion No Garlic</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Cooked Time & Fresh Till (Expiry) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-amber-50/60 rounded-xl border border-amber-200">
+          <div>
+            <label class="block text-xs font-bold text-amber-950 uppercase tracking-wider mb-1">When Was It Cooked?</label>
+            <input type="datetime-local" id="food-cooked" required class="w-full px-3 py-2 rounded-lg border border-amber-300 bg-white text-xs">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-amber-950 uppercase tracking-wider mb-1">Till When Is It Fresh? (Expiry) *</label>
+            <input type="datetime-local" id="food-fresh-till" required class="w-full px-3 py-2 rounded-lg border border-amber-300 bg-white text-xs">
+            <!-- Quick preset buttons -->
+            <div class="flex items-center gap-1.5 mt-2">
+              <span class="text-[10px] text-amber-800 font-bold">Quick:</span>
+              <button type="button" onclick="setFreshnessHours(2)" class="px-2 py-0.5 bg-amber-200 hover:bg-amber-300 text-amber-900 rounded text-[10px] font-semibold">+2 Hours</button>
+              <button type="button" onclick="setFreshnessHours(4)" class="px-2 py-0.5 bg-amber-200 hover:bg-amber-300 text-amber-900 rounded text-[10px] font-semibold">+4 Hours</button>
+              <button type="button" onclick="setFreshnessHours(6)" class="px-2 py-0.5 bg-amber-200 hover:bg-amber-300 text-amber-900 rounded text-[10px] font-semibold">+6 Hours</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Packaging & Special Notes -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Packaging Condition</label>
+            <select id="food-packaging" class="theme-select select-amber w-full px-3.5 py-2.5 rounded-xl border border-amber-300 focus:ring-2 focus:ring-amber-500 outline-none text-sm bg-white">
+              <option value="Bring your own containers/buckets">Bring your own vessels/buckets</option>
+              <option value="Packed in food grade foil trays">Packed in food grade foil containers</option>
+              <option value="Packed in meal packets">Individually packed meal boxes</option>
+              <option value="Large stainless steel vessels">Stored in large stainless steel vessels</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Storage / Quality Notes</label>
+            <input type="text" id="food-notes" placeholder="e.g. Kept hot in Bain Marie, untouched batch" 
+                   class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500 outline-none text-sm">
+          </div>
+        </div>
+
+        <!-- Detailed Description -->
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Menu Items & Details</label>
+          <textarea id="food-description" rows="2" placeholder="List items in the meal: e.g. Steamed basmati rice, Dal fry, Paneer butter masala, 50 chapatis, salad." 
+                    class="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500 outline-none text-sm"></textarea>
+        </div>
+
+        <!-- Specific Pickup Instructions -->
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Specific Pickup Instructions</label>
+          <input type="text" id="food-pickup-instructions" placeholder="e.g. Come via Gate 2, Central Mess loading ramp, ask for Supervisor Suresh." 
+                 class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500 outline-none text-sm">
+        </div>
+
+        <div class="pt-4 border-t border-slate-200 flex items-center justify-end gap-3">
+          <button type="button" onclick="closeUploadModal()" class="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-600 font-semibold text-sm hover:bg-slate-100 transition">
+            Cancel
+          </button>
+          <button type="submit" id="btn-submit-upload" class="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl shadow-md transition text-sm">
+            Publish Surplus Food Listing
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/common.js"></script>
+  <script src="/js/mess.js"></script>
+</body>
+</html>
