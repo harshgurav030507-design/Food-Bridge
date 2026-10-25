@@ -208,3 +208,12 @@ function detectUserLocation() {
     );
   });
 }
+
+// If already logged in, redirect away from the auth page
+if (window.location.pathname === '/auth') {
+  getCurrentUser().then(user => {
+    if (user) {
+      window.location.replace(user.role === 'ngo' ? '/ngo' : '/mess');
+    }
+  });
+}
