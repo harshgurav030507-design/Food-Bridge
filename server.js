@@ -6,6 +6,7 @@ const bcrypt = require('bcryptjs');
 const path = require('path');
 const { pool, initDatabase, calculateDistance, updateExpiredListings } = require('./database/db');
 const { sendOtpEmail } = require('./mailer');
+const pgSession = require('connect-pg-simple')(session);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -25,19 +26,24 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.use(
-  session({
-    secret: SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: IS_PROD
-    }
-  })
-);
+   app.use(
+     session({
+       store: new pgSession({
+         pool,                          // reuse your Neon connection
+         tableName: 'user_sessions',    // table where sessions are saved
+         createTableIfMissing: true     // creates the table for you
+       }),
+       secret: SESSION_SECRET,
+       resave: false,
+       saveUninitialized: false,
+       cookie: {
+         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+         httpOnly: true,
+         sameSite: 'lax',
+         secure: IS_PROD
+       }
+     })
+   );
 
 // Middleware to check authentication
 function requireAuth(req, res, next) {
