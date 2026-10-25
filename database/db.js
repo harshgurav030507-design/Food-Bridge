@@ -1,18 +1,16 @@
-const Database = require('better-sqlite3');
-const path = require('path');
+const { Pool, types } = require('pg');
 
-const dbPath = process.env.DB_PATH || path.join(__dirname, 'foodbridge.db');
-const db = new Database(dbPath);
+// Postgres sends big numbers (COUNT, SUM, BIGINT) as text by default.
+// This line turns them into normal JavaScript numbers.
+types.setTypeParser(20, (value) => parseInt(value, 10));
 
-// Enable Foreign Keys
-db.pragma('foreign_keys = ON');
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-// Initialize Tables
-function initDatabase() {
-  db.exec(`
+async function initDatabase() {
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      role TEXT NOT NULL CHECK(role IN ('mess', 'ngo')),
+      id SERIAL PRIMARY KEY,
+      role TEXT NOT NULL CHECK (role IN ('mess', 'ngo')),
       name TEXT NOT NULL,
       email TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
@@ -21,41 +19,40 @@ function initDatabase() {
       city TEXT NOT NULL,
       state TEXT,
       pincode TEXT,
-      latitude REAL NOT NULL,
-      longitude REAL NOT NULL,
+      latitude DOUBLE PRECISION NOT NULL,
+      longitude DOUBLE PRECISION NOT NULL,
       contact_person TEXT,
       org_type TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS food_listings (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       mess_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       title TEXT NOT NULL,
       description TEXT,
       plates_count INTEGER NOT NULL,
       food_type TEXT NOT NULL DEFAULT 'veg',
-      cooked_at DATETIME NOT NULL,
-      fresh_till DATETIME NOT NULL,
+      cooked_at TIMESTAMPTZ NOT NULL,
+      fresh_till TIMESTAMPTZ NOT NULL,
       packaging_type TEXT DEFAULT 'Bring Own Containers',
       pickup_instructions TEXT,
       special_notes TEXT,
-      status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available', 'claimed', 'picked_up', 'expired', 'cancelled')),
+      status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'claimed', 'picked_up', 'expired', 'cancelled')),
       claimed_by_ngo_id INTEGER REFERENCES users(id),
-      claimed_at DATETIME,
+      claimed_at TIMESTAMPTZ,
       estimated_pickup_time TEXT,
       ngo_notes TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
-    -- Pending registrations waiting for email OTP verification
     CREATE TABLE IF NOT EXISTS email_otps (
       email TEXT PRIMARY KEY,
       otp_hash TEXT NOT NULL,
-      payload TEXT NOT NULL,          -- registration form data (password already hashed)
-      expires_at INTEGER NOT NULL,    -- ms timestamp
+      payload TEXT NOT NULL,
+      expires_at BIGINT NOT NULL,
       attempts INTEGER NOT NULL DEFAULT 0,
-      last_sent_at INTEGER NOT NULL
+      last_sent_at BIGINT NOT NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_food_status ON food_listings(status);
@@ -65,10 +62,10 @@ function initDatabase() {
   console.log('Database initialized successfully.');
 }
 
-// Distance calculation using Haversine Formula (returns kilometers)
+// Distance calculation using Haversine Formula (returns kilometers) -- unchanged
 function calculateDistance(lat1, lon1, lat2, lon2) {
   if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) return null;
-  const R = 6371; // Radius of the Earth in km
+  const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a =
@@ -76,23 +73,16 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return Math.round(R * c * 10) / 10; // Round to 1 decimal place
+  return Math.round(R * c * 10) / 10;
 }
 
-// Helper: auto-expire stale available listings
-function updateExpiredListings() {
-  const now = new Date().toISOString();
-  const stmt = db.prepare(`
-    UPDATE food_listings 
-    SET status = 'expired' 
-    WHERE status = 'available' AND fresh_till < ?
+// Auto-expire stale available listings
+async function updateExpiredListings() {
+  await pool.query(`
+    UPDATE food_listings
+    SET status = 'expired'
+    WHERE status = 'available' AND fresh_till < NOW()
   `);
-  stmt.run(now);
 }
 
-module.exports = {
-  db,
-  initDatabase,
-  calculateDistance,
-  updateExpiredListings
-};
+module.exports = { pool, initDatabase, calculateDistance, updateExpiredListings };

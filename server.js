@@ -4,11 +4,8 @@ const crypto = require('crypto');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const path = require('path');
-const { db, initDatabase, calculateDistance, updateExpiredListings } = require('./database/db');
+const { pool, initDatabase, calculateDistance, updateExpiredListings } = require('./database/db');
 const { sendOtpEmail } = require('./mailer');
-
-// Ensure database tables exist
-initDatabase();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -108,8 +105,8 @@ app.post('/api/auth/register/send-otp', async (req, res) => {
       return res.status(400).json({ error: 'Password must be at least 6 characters.' });
     }
 
-    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(cleanEmail);
-    if (existing) {
+    const existingResult = await pool.query('SELECT id FROM users WHERE email = $1', [cleanEmail]);
+    if (existingResult.rows[0]) {
       return res.status(400).json({ error: 'An account with this email address already exists.' });
     }
 
@@ -119,7 +116,8 @@ app.post('/api/auth/register/send-otp', async (req, res) => {
     }
 
     // Stop people from spamming the "send OTP" button
-    const pending = db.prepare('SELECT last_sent_at FROM email_otps WHERE email = ?').get(cleanEmail);
+    const pendingResult = await pool.query('SELECT last_sent_at FROM email_otps WHERE email = $1', [cleanEmail]);
+    const pending = pendingResult.rows[0];
     if (pending) {
       const waitMs = OTP_RESEND_WAIT_MS - (Date.now() - pending.last_sent_at);
       if (waitMs > 0) {
@@ -147,22 +145,23 @@ app.post('/api/auth/register/send-otp', async (req, res) => {
 
     const otp = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
 
-    db.prepare(`
-      INSERT INTO email_otps (email, otp_hash, payload, expires_at, attempts, last_sent_at)
-      VALUES (?, ?, ?, ?, 0, ?)
-      ON CONFLICT(email) DO UPDATE SET
-        otp_hash = excluded.otp_hash,
-        payload = excluded.payload,
-        expires_at = excluded.expires_at,
-        attempts = 0,
-        last_sent_at = excluded.last_sent_at
-    `).run(cleanEmail, hashOtp(cleanEmail, otp), JSON.stringify(payload), Date.now() + OTP_VALID_MS, Date.now());
+    await pool.query(
+      `INSERT INTO email_otps (email, otp_hash, payload, expires_at, attempts, last_sent_at)
+       VALUES ($1, $2, $3, $4, 0, $5)
+       ON CONFLICT (email) DO UPDATE SET
+         otp_hash = EXCLUDED.otp_hash,
+         payload = EXCLUDED.payload,
+         expires_at = EXCLUDED.expires_at,
+         attempts = 0,
+         last_sent_at = EXCLUDED.last_sent_at`,
+      [cleanEmail, hashOtp(cleanEmail, otp), JSON.stringify(payload), Date.now() + OTP_VALID_MS, Date.now()]
+    );
 
     try {
       await sendOtpEmail(cleanEmail, otp, payload.name);
     } catch (mailErr) {
       console.error('OTP email error:', mailErr.message);
-      db.prepare('DELETE FROM email_otps WHERE email = ?').run(cleanEmail);
+      await pool.query('DELETE FROM email_otps WHERE email = $1', [cleanEmail]);
       return res.status(500).json({ error: 'Could not send the OTP email. Please check the email address and try again.' });
     }
 
@@ -174,7 +173,7 @@ app.post('/api/auth/register/send-otp', async (req, res) => {
 });
 
 // Step 2: verify OTP and create the account
-app.post('/api/auth/register/verify-otp', (req, res) => {
+app.post('/api/auth/register/verify-otp', async (req, res) => {
   try {
     const email = String(req.body.email || '').toLowerCase().trim();
     const otp = String(req.body.otp || '').trim();
@@ -183,23 +182,24 @@ app.post('/api/auth/register/verify-otp', (req, res) => {
       return res.status(400).json({ error: 'Please enter the 6-digit OTP.' });
     }
 
-    const row = db.prepare('SELECT * FROM email_otps WHERE email = ?').get(email);
+    const rowResult = await pool.query('SELECT * FROM email_otps WHERE email = $1', [email]);
+    const row = rowResult.rows[0];
     if (!row) {
       return res.status(400).json({ error: 'No OTP found for this email. Please request a new one.' });
     }
 
     if (Date.now() > row.expires_at) {
-      db.prepare('DELETE FROM email_otps WHERE email = ?').run(email);
+      await pool.query('DELETE FROM email_otps WHERE email = $1', [email]);
       return res.status(400).json({ error: 'This OTP has expired. Please request a new one.' });
     }
 
     if (row.attempts >= OTP_MAX_ATTEMPTS) {
-      db.prepare('DELETE FROM email_otps WHERE email = ?').run(email);
+      await pool.query('DELETE FROM email_otps WHERE email = $1', [email]);
       return res.status(429).json({ error: 'Too many wrong attempts. Please request a new OTP.' });
     }
 
     if (!safeEqual(hashOtp(email, otp), row.otp_hash)) {
-      db.prepare('UPDATE email_otps SET attempts = attempts + 1 WHERE email = ?').run(email);
+      await pool.query('UPDATE email_otps SET attempts = attempts + 1 WHERE email = $1', [email]);
       const left = OTP_MAX_ATTEMPTS - (row.attempts + 1);
       return res.status(400).json({
         error: left > 0 ? `Incorrect OTP. ${left} attempt(s) left.` : 'Incorrect OTP. Please request a new one.'
@@ -209,23 +209,35 @@ app.post('/api/auth/register/verify-otp', (req, res) => {
     // OTP is correct -> create the account
     const d = JSON.parse(row.payload);
 
-    const alreadyExists = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
-    if (alreadyExists) {
-      db.prepare('DELETE FROM email_otps WHERE email = ?').run(email);
+    const alreadyResult = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    if (alreadyResult.rows[0]) {
+      await pool.query('DELETE FROM email_otps WHERE email = $1', [email]);
       return res.status(400).json({ error: 'An account with this email address already exists.' });
     }
 
-    const createUser = db.transaction(() => {
-      const result = db.prepare(`
-        INSERT INTO users (role, name, email, password, phone, address, city, state, pincode, latitude, longitude, contact_person, org_type)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(d.role, d.name, d.email, d.password, d.phone, d.address, d.city, d.state, d.pincode, d.latitude, d.longitude, d.contact_person, d.org_type);
-      db.prepare('DELETE FROM email_otps WHERE email = ?').run(email);
-      return result.lastInsertRowid;
-    });
+    // Create the user and delete the OTP together: both succeed or neither does
+    const client = await pool.connect();
+    let newId;
+    try {
+      await client.query('BEGIN');
+      const insertResult = await client.query(
+        `INSERT INTO users (role, name, email, password, phone, address, city, state, pincode, latitude, longitude, contact_person, org_type)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         RETURNING id`,
+        [d.role, d.name, d.email, d.password, d.phone, d.address, d.city, d.state, d.pincode, d.latitude, d.longitude, d.contact_person, d.org_type]
+      );
+      newId = insertResult.rows[0].id;
+      await client.query('DELETE FROM email_otps WHERE email = $1', [email]);
+      await client.query('COMMIT');
+    } catch (txErr) {
+      await client.query('ROLLBACK');
+      throw txErr;
+    } finally {
+      client.release();
+    }
 
-    const newId = createUser();
-    const newUser = db.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`).get(newId);
+    const userResult = await pool.query(`SELECT ${USER_COLUMNS} FROM users WHERE id = $1`, [newId]);
+    const newUser = userResult.rows[0];
     req.session.user = newUser;
 
     res.status(201).json({ message: 'Email verified. Account registered successfully!', user: newUser });
@@ -236,7 +248,7 @@ app.post('/api/auth/register/verify-otp', (req, res) => {
 });
 
 // Login
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password, role } = req.body;
 
@@ -244,7 +256,8 @@ app.post('/api/auth/login', (req, res) => {
       return res.status(400).json({ error: 'Email and password are required.' });
     }
 
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim());
+    const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [email.toLowerCase().trim()]);
+    const user = userResult.rows[0];
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password.' });
@@ -275,37 +288,44 @@ app.post('/api/auth/login', (req, res) => {
 });
 
 // Get current session user
-app.get('/api/auth/me', (req, res) => {
-  if (req.session.user) {
-    // Refresh user data from database to capture any profile updates
-    const refreshed = db.prepare('SELECT id, role, name, email, phone, address, city, state, pincode, latitude, longitude, contact_person, org_type FROM users WHERE id = ?').get(req.session.user.id);
-    if (refreshed) {
-      req.session.user = refreshed;
-      return res.json({ user: refreshed });
+app.get('/api/auth/me', async (req, res) => {
+  try {
+    if (req.session.user) {
+      // Refresh user data from database to capture any profile updates
+      const refreshedResult = await pool.query(`SELECT ${USER_COLUMNS} FROM users WHERE id = $1`, [req.session.user.id]);
+      const refreshed = refreshedResult.rows[0];
+      if (refreshed) {
+        req.session.user = refreshed;
+        return res.json({ user: refreshed });
+      }
     }
+    res.json({ user: null });
+  } catch (err) {
+    console.error('Session check error:', err);
+    res.status(500).json({ error: 'Could not check session.' });
   }
-  res.json({ user: null });
 });
 
 // Update location / coordinates
-app.post('/api/auth/update-location', requireAuth, (req, res) => {
+app.post('/api/auth/update-location', requireAuth, async (req, res) => {
   try {
     const { latitude, longitude, address, city, state } = req.body;
     if (latitude == null || longitude == null) {
       return res.status(400).json({ error: 'Latitude and Longitude are required.' });
     }
 
-    const stmt = db.prepare(`
-      UPDATE users 
-      SET latitude = ?, longitude = ?, 
-          address = COALESCE(?, address),
-          city = COALESCE(?, city),
-          state = COALESCE(?, state)
-      WHERE id = ?
-    `);
-    stmt.run(parseFloat(latitude), parseFloat(longitude), address || null, city || null, state || null, req.session.user.id);
+    await pool.query(
+      `UPDATE users
+       SET latitude = $1, longitude = $2,
+           address = COALESCE($3, address),
+           city = COALESCE($4, city),
+           state = COALESCE($5, state)
+       WHERE id = $6`,
+      [parseFloat(latitude), parseFloat(longitude), address || null, city || null, state || null, req.session.user.id]
+    );
 
-    const updated = db.prepare('SELECT id, role, name, email, phone, address, city, state, pincode, latitude, longitude, contact_person, org_type FROM users WHERE id = ?').get(req.session.user.id);
+    const updatedResult = await pool.query(`SELECT ${USER_COLUMNS} FROM users WHERE id = $1`, [req.session.user.id]);
+    const updated = updatedResult.rows[0];
     req.session.user = updated;
 
     res.json({ message: 'Location updated successfully', user: updated });
@@ -328,11 +348,11 @@ app.post('/api/auth/logout', (req, res) => {
 // ==========================================
 
 // Get listings created by current mess
-app.get('/api/mess/listings', requireRole('mess'), (req, res) => {
+app.get('/api/mess/listings', requireRole('mess'), async (req, res) => {
   try {
-    updateExpiredListings();
+    await updateExpiredListings();
 
-    const stmt = db.prepare(`
+    const result = await pool.query(`
       SELECT 
         f.*,
         u.name AS claimed_ngo_name,
@@ -341,7 +361,7 @@ app.get('/api/mess/listings', requireRole('mess'), (req, res) => {
         u.address AS claimed_ngo_address
       FROM food_listings f
       LEFT JOIN users u ON f.claimed_by_ngo_id = u.id
-      WHERE f.mess_id = ?
+      WHERE f.mess_id = $1
       ORDER BY 
         CASE 
           WHEN f.status = 'claimed' THEN 1
@@ -350,17 +370,16 @@ app.get('/api/mess/listings', requireRole('mess'), (req, res) => {
           ELSE 4 
         END,
         f.created_at DESC
-    `);
+    `, [req.session.user.id]);
 
-    const listings = stmt.all(req.session.user.id);
-    res.json({ listings });
+    res.json({ listings: result.rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // Create a new surplus food listing
-app.post('/api/mess/listings', requireRole('mess'), (req, res) => {
+app.post('/api/mess/listings', requireRole('mess'), async (req, res) => {
   try {
     const {
       title,
@@ -390,27 +409,27 @@ app.post('/api/mess/listings', requireRole('mess'), (req, res) => {
       return res.status(400).json({ error: 'The "Fresh Till" time must be set in the future.' });
     }
 
-    const stmt = db.prepare(`
-      INSERT INTO food_listings (
+    const result = await pool.query(
+      `INSERT INTO food_listings (
         mess_id, title, description, plates_count, food_type, cooked_at, fresh_till, 
         packaging_type, pickup_instructions, special_notes, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available')
-    `);
-
-    const result = stmt.run(
-      req.session.user.id,
-      title.trim(),
-      description ? description.trim() : '',
-      plates,
-      food_type || 'veg',
-      cookedTime,
-      expiryTime,
-      packaging_type || 'Bring own containers',
-      pickup_instructions ? pickup_instructions.trim() : req.session.user.address,
-      special_notes ? special_notes.trim() : ''
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'available')
+      RETURNING *`,
+      [
+        req.session.user.id,
+        title.trim(),
+        description ? description.trim() : '',
+        plates,
+        food_type || 'veg',
+        cookedTime,
+        expiryTime,
+        packaging_type || 'Bring own containers',
+        pickup_instructions ? pickup_instructions.trim() : req.session.user.address,
+        special_notes ? special_notes.trim() : ''
+      ]
     );
 
-    const newListing = db.prepare('SELECT * FROM food_listings WHERE id = ?').get(result.lastInsertRowid);
+    const newListing = result.rows[0];
 
     res.status(201).json({
       message: 'Surplus food listing published successfully!',
@@ -422,7 +441,7 @@ app.post('/api/mess/listings', requireRole('mess'), (req, res) => {
 });
 
 // Update listing status (e.g. mark handed over / picked up or cancel)
-app.put('/api/mess/listings/:id/status', requireRole('mess'), (req, res) => {
+app.put('/api/mess/listings/:id/status', requireRole('mess'), async (req, res) => {
   try {
     const { status } = req.body;
     const listingId = parseInt(req.params.id, 10);
@@ -432,20 +451,21 @@ app.put('/api/mess/listings/:id/status', requireRole('mess'), (req, res) => {
     }
 
     // Verify listing belongs to this mess
-    const listing = db.prepare('SELECT * FROM food_listings WHERE id = ? AND mess_id = ?').get(listingId, req.session.user.id);
+    const listingResult = await pool.query('SELECT * FROM food_listings WHERE id = $1 AND mess_id = $2', [listingId, req.session.user.id]);
+    const listing = listingResult.rows[0];
     if (!listing) {
       return res.status(404).json({ error: 'Listing not found or not owned by you.' });
     }
 
-    let query = 'UPDATE food_listings SET status = ? WHERE id = ?';
+    let query = 'UPDATE food_listings SET status = $1 WHERE id = $2';
     let params = [status, listingId];
 
     // If reverting back to available from claimed
     if (status === 'available') {
-      query = 'UPDATE food_listings SET status = ?, claimed_by_ngo_id = NULL, claimed_at = NULL, estimated_pickup_time = NULL, ngo_notes = NULL WHERE id = ?';
+      query = 'UPDATE food_listings SET status = $1, claimed_by_ngo_id = NULL, claimed_at = NULL, estimated_pickup_time = NULL, ngo_notes = NULL WHERE id = $2';
     }
 
-    db.prepare(query).run(...params);
+    await pool.query(query, params);
 
     res.json({ message: `Listing status updated to ${status}.` });
   } catch (err) {
@@ -454,12 +474,12 @@ app.put('/api/mess/listings/:id/status', requireRole('mess'), (req, res) => {
 });
 
 // Delete listing
-app.delete('/api/mess/listings/:id', requireRole('mess'), (req, res) => {
+app.delete('/api/mess/listings/:id', requireRole('mess'), async (req, res) => {
   try {
     const listingId = parseInt(req.params.id, 10);
-    const result = db.prepare('DELETE FROM food_listings WHERE id = ? AND mess_id = ?').run(listingId, req.session.user.id);
+    const result = await pool.query('DELETE FROM food_listings WHERE id = $1 AND mess_id = $2', [listingId, req.session.user.id]);
 
-    if (result.changes === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Listing not found.' });
     }
 
@@ -470,23 +490,23 @@ app.delete('/api/mess/listings/:id', requireRole('mess'), (req, res) => {
 });
 
 // Mess summary stats
-app.get('/api/mess/stats', requireRole('mess'), (req, res) => {
+app.get('/api/mess/stats', requireRole('mess'), async (req, res) => {
   try {
-    updateExpiredListings();
+    await updateExpiredListings();
 
     const messId = req.session.user.id;
 
-    const stats = db.prepare(`
+    const statsResult = await pool.query(`
       SELECT 
         COALESCE(SUM(CASE WHEN status = 'picked_up' THEN plates_count ELSE 0 END), 0) AS total_plates_saved,
         COUNT(CASE WHEN status = 'available' THEN 1 END) AS active_listings,
         COUNT(CASE WHEN status = 'claimed' THEN 1 END) AS awaiting_pickup,
         COUNT(CASE WHEN status = 'picked_up' THEN 1 END) AS total_donations_completed
       FROM food_listings
-      WHERE mess_id = ?
-    `).get(messId);
+      WHERE mess_id = $1
+    `, [messId]);
 
-    res.json({ stats });
+    res.json({ stats: statsResult.rows[0] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -497,9 +517,9 @@ app.get('/api/mess/stats', requireRole('mess'), (req, res) => {
 // ==========================================
 
 // Get available food listings with distance calculation & recommendation
-app.get('/api/ngo/available-food', (req, res) => {
+app.get('/api/ngo/available-food', async (req, res) => {
   try {
-    updateExpiredListings();
+    await updateExpiredListings();
 
     // NGO coordinates: check session or query parameters (lat/lon)
     let ngoLat = req.session.user ? req.session.user.latitude : null;
@@ -526,23 +546,25 @@ app.get('/api/ngo/available-food', (req, res) => {
         m.org_type AS mess_org_type
       FROM food_listings f
       JOIN users m ON f.mess_id = m.id
-      WHERE f.status = 'available' AND f.fresh_till > datetime('now')
+      WHERE f.status = 'available' AND f.fresh_till > NOW()
     `;
 
     const params = [];
 
     if (food_type && food_type !== 'all') {
-      query += ` AND f.food_type = ?`;
       params.push(food_type);
+      query += ` AND f.food_type = $${params.length}`;
     }
 
     if (search) {
-      query += ` AND (f.title LIKE ? OR f.description LIKE ? OR m.name LIKE ? OR m.address LIKE ?)`;
-      const term = `%${search}%`;
-      params.push(term, term, term, term);
+      // ILIKE = case-insensitive search (plain LIKE is case-sensitive in Postgres)
+      params.push(`%${search}%`);
+      const n = params.length;
+      query += ` AND (f.title ILIKE $${n} OR f.description ILIKE $${n} OR m.name ILIKE $${n} OR m.address ILIKE $${n})`;
     }
 
-    let listings = db.prepare(query).all(...params);
+    const listingsResult = await pool.query(query, params);
+    let listings = listingsResult.rows;
 
     // Calculate distance for each listing relative to NGO
     listings = listings.map((item) => {
@@ -591,19 +613,20 @@ app.get('/api/ngo/available-food', (req, res) => {
 });
 
 // Claim surplus food
-app.post('/api/ngo/claim/:id', requireRole('ngo'), (req, res) => {
+app.post('/api/ngo/claim/:id', requireRole('ngo'), async (req, res) => {
   try {
-    updateExpiredListings();
+    await updateExpiredListings();
 
     const listingId = parseInt(req.params.id, 10);
     const { estimated_pickup_time, ngo_notes } = req.body;
 
-    const listing = db.prepare(`
+    const listingResult = await pool.query(`
       SELECT f.*, m.name AS mess_name, m.phone AS mess_phone 
       FROM food_listings f
       JOIN users m ON f.mess_id = m.id
-      WHERE f.id = ?
-    `).get(listingId);
+      WHERE f.id = $1
+    `, [listingId]);
+    const listing = listingResult.rows[0];
 
     if (!listing) {
       return res.status(404).json({ error: 'Food listing not found.' });
@@ -618,25 +641,24 @@ app.post('/api/ngo/claim/:id', requireRole('ngo'), (req, res) => {
     }
 
     const now = new Date().toISOString();
-    const updateStmt = db.prepare(`
-      UPDATE food_listings
-      SET status = 'claimed',
-          claimed_by_ngo_id = ?,
-          claimed_at = ?,
-          estimated_pickup_time = ?,
-          ngo_notes = ?
-      WHERE id = ? AND status = 'available'
-    `);
-
-    const result = updateStmt.run(
-      req.session.user.id,
-      now,
-      estimated_pickup_time ? estimated_pickup_time.trim() : 'Within 1 hour',
-      ngo_notes ? ngo_notes.trim() : '',
-      listingId
+    const result = await pool.query(
+      `UPDATE food_listings
+       SET status = 'claimed',
+           claimed_by_ngo_id = $1,
+           claimed_at = $2,
+           estimated_pickup_time = $3,
+           ngo_notes = $4
+       WHERE id = $5 AND status = 'available'`,
+      [
+        req.session.user.id,
+        now,
+        estimated_pickup_time ? estimated_pickup_time.trim() : 'Within 1 hour',
+        ngo_notes ? ngo_notes.trim() : '',
+        listingId
+      ]
     );
 
-    if (result.changes === 0) {
+    if (result.rowCount === 0) {
       return res.status(400).json({ error: 'Listing was claimed just now by another organization.' });
     }
 
@@ -653,11 +675,12 @@ app.post('/api/ngo/claim/:id', requireRole('ngo'), (req, res) => {
 });
 
 // Cancel a claim (reverts listing to available for other NGOs)
-app.post('/api/ngo/cancel-claim/:id', requireRole('ngo'), (req, res) => {
+app.post('/api/ngo/cancel-claim/:id', requireRole('ngo'), async (req, res) => {
   try {
     const listingId = parseInt(req.params.id, 10);
 
-    const listing = db.prepare('SELECT * FROM food_listings WHERE id = ? AND claimed_by_ngo_id = ?').get(listingId, req.session.user.id);
+    const listingResult = await pool.query('SELECT * FROM food_listings WHERE id = $1 AND claimed_by_ngo_id = $2', [listingId, req.session.user.id]);
+    const listing = listingResult.rows[0];
 
     if (!listing) {
       return res.status(404).json({ error: 'Claimed listing not found.' });
@@ -667,15 +690,15 @@ app.post('/api/ngo/cancel-claim/:id', requireRole('ngo'), (req, res) => {
       return res.status(400).json({ error: `Cannot cancel claim because the status is ${listing.status}.` });
     }
 
-    db.prepare(`
+    await pool.query(`
       UPDATE food_listings
       SET status = 'available',
           claimed_by_ngo_id = NULL,
           claimed_at = NULL,
           estimated_pickup_time = NULL,
           ngo_notes = NULL
-      WHERE id = ?
-    `).run(listingId);
+      WHERE id = $1
+    `, [listingId]);
 
     res.json({ message: 'Claim successfully cancelled. Food is now available for other NGOs.' });
   } catch (err) {
@@ -684,13 +707,13 @@ app.post('/api/ngo/cancel-claim/:id', requireRole('ngo'), (req, res) => {
 });
 
 // NGO's claimed pickups and history
-app.get('/api/ngo/my-claims', requireRole('ngo'), (req, res) => {
+app.get('/api/ngo/my-claims', requireRole('ngo'), async (req, res) => {
   try {
     const ngoId = req.session.user.id;
     const ngoLat = req.session.user.latitude;
     const ngoLon = req.session.user.longitude;
 
-    const stmt = db.prepare(`
+    const claimsResult = await pool.query(`
       SELECT 
         f.*,
         m.name AS mess_name,
@@ -704,13 +727,13 @@ app.get('/api/ngo/my-claims', requireRole('ngo'), (req, res) => {
         m.org_type AS mess_org_type
       FROM food_listings f
       JOIN users m ON f.mess_id = m.id
-      WHERE f.claimed_by_ngo_id = ?
+      WHERE f.claimed_by_ngo_id = $1
       ORDER BY 
         CASE WHEN f.status = 'claimed' THEN 1 ELSE 2 END,
         f.claimed_at DESC
-    `);
+    `, [ngoId]);
 
-    let claims = stmt.all(ngoId);
+    let claims = claimsResult.rows;
 
     claims = claims.map(c => ({
       ...c,
@@ -726,31 +749,31 @@ app.get('/api/ngo/my-claims', requireRole('ngo'), (req, res) => {
 // ==========================================
 // PUBLIC OVERVIEW & STATS API
 // ==========================================
-app.get('/api/stats', (req, res) => {
+app.get('/api/stats', async (req, res) => {
   try {
-    updateExpiredListings();
+    await updateExpiredListings();
 
-    const counts = db.prepare(`
+    const countsResult = await pool.query(`
       SELECT 
         (SELECT COUNT(*) FROM users WHERE role = 'mess') AS total_messes,
         (SELECT COUNT(*) FROM users WHERE role = 'ngo') AS total_ngos,
         (SELECT COALESCE(SUM(plates_count), 0) FROM food_listings WHERE status = 'picked_up') AS total_meals_served,
-        (SELECT COALESCE(SUM(plates_count), 0) FROM food_listings WHERE status = 'available' AND fresh_till > datetime('now')) AS available_plates_now,
-        (SELECT COUNT(*) FROM food_listings WHERE status = 'available' AND fresh_till > datetime('now')) AS available_listings_count
-    `).get();
+        (SELECT COALESCE(SUM(plates_count), 0) FROM food_listings WHERE status = 'available' AND fresh_till > NOW()) AS available_plates_now,
+        (SELECT COUNT(*) FROM food_listings WHERE status = 'available' AND fresh_till > NOW()) AS available_listings_count
+    `);
 
-    res.json(counts);
+    res.json(countsResult.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // Map markers API: returns all active food locations with mess details
-app.get('/api/map/markers', (req, res) => {
+app.get('/api/map/markers', async (req, res) => {
   try {
-    updateExpiredListings();
+    await updateExpiredListings();
 
-    const stmt = db.prepare(`
+    const markersResult = await pool.query(`
       SELECT 
         f.id AS listing_id,
         f.title,
@@ -766,11 +789,10 @@ app.get('/api/map/markers', (req, res) => {
         m.longitude
       FROM food_listings f
       JOIN users m ON f.mess_id = m.id
-      WHERE f.status = 'available' AND f.fresh_till > datetime('now')
+      WHERE f.status = 'available' AND f.fresh_till > NOW()
     `);
 
-    const markers = stmt.all();
-    res.json({ markers });
+    res.json({ markers: markersResult.rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -795,7 +817,14 @@ app.get('/auth', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'auth.html'));
 });
 
-// Start Server
-app.listen(PORT, () => {
-  console.log(`FoodBridge server running at http://localhost:${PORT}`);
-});
+// Start Server (only after the database tables are ready)
+initDatabase()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`FoodBridge server running at http://localhost:${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error('Could not start server:', err.message);
+    process.exit(1);
+  });
