@@ -447,9 +447,9 @@
         showToast('Login successful! Redirecting...', 'success');
         setTimeout(() => {
           if (data.user.role === 'ngo') {
-            window.location.href = '/ngo';
+            window.location.replace('/ngo');
           } else {
-            window.location.href = '/mess';
+            window.location.replace('/mess');
           }
         }, 500);
       } catch (err) {
@@ -608,7 +608,7 @@
         const role = otpPendingRole;
         otpPendingEmail = null;
         setTimeout(() => {
-          window.location.href = role === 'ngo' ? '/ngo' : '/mess';
+          window.location.replace(role === 'ngo' ? '/ngo' : '/mess');
         }, 600);
       } catch (err) {
         showToast('Verification error: ' + err.message, 'error');
